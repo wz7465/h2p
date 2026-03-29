@@ -1,0 +1,70 @@
+name: Host2Play Gratis Renew
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Start Xvfb
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb
+        Xvfb :99 -screen 0 1920x1080x24 &
+        echo "DISPLAY=:99" >> $GITHUB_ENV
+
+    - name: Install Chrome
+      run: |
+        sudo apt-get install -y wget gnupg
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+
+    - name: Cache Chrome Profile
+      uses: actions/cache@v3
+      with:
+        path: chrome_profile
+        key: chrome-profile
+        restore-keys: chrome-profile
+
+    - name: Cache Google Cookies
+      uses: actions/cache@v3
+      with:
+        path: google_cookies.json
+        key: google-cookies
+        restore-keys: google-cookies
+
+    - name: Start Chrome
+      run: |
+        google-chrome \
+          --remote-debugging-port=9222 \
+          --user-data-dir=chrome_profile \
+          --disable-blink-features=AutomationControlled \
+          --disable-infobars \
+          --no-sandbox \
+          --disable-dev-shm-usage \
+          --start-maximized \
+          --headless=none \
+          > /dev/null 2>&1 &
+
+    - name: Setup Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
+
+    - name: Install Playwright
+      run: npm install playwright
+
+    - name: Run Renew Script
+      env:
+        H2P_EMAIL: ${{ secrets.H2P_EMAIL }}
+        H2P_PASSWORD: ${{ secrets.H2P_PASSWORD }}
+      run: node host2play_renew.js
