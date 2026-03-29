@@ -1,15 +1,37 @@
 const { chromium } = require("playwright");
 const fs = require("fs");
 
-async function closeGoogleVignette(page) {
-  try {
-    const frame = page.frame(f => f.url().includes("google_vignette"));
-    if (frame) {
-      console.log("[H2P] Google Vignette detected, closing...");
+async function waitForRealLoginPage(page) {
+  for (let i = 0; i < 10; i++) {
+    const url = page.url();
+
+    // 1. Google Vignette 广告层
+    if (url.includes("google_vignette")) {
+      console.log("[H2P] Google Vignette detected → closing...");
       await page.keyboard.press("Escape");
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(1500);
+      continue;
     }
-  } catch {}
+
+    // 2. Cloudflare challenge
+    if (url.includes("/cdn-cgi/")) {
+      console.log("[H2P] Cloudflare challenge detected → waiting...");
+      await page.waitForTimeout(3000);
+      continue;
+    }
+
+    // 3. 检查 email 输入框是否出现
+    const emailExists = await page.$("input[name='email']");
+    if (emailExists) {
+      console.log("[H2P] Login form detected");
+      return;
+    }
+
+    console.log("[H2P] Login form not ready → retrying...");
+    await page.waitForTimeout(1500);
+  }
+
+  throw new Error("Login page never loaded (blocked by ads or Cloudflare)");
 }
 
 async function main() {
@@ -29,10 +51,13 @@ async function main() {
   const page = await context.newPage();
 
   try {
-    // 登录
     console.log("[H2P] Opening login page...");
     await page.goto("https://host2play.gratis/sign-in", { timeout: 60000 });
 
+    // 等待真正的登录页出现
+    await waitForRealLoginPage(page);
+
+    // 填写账号密码
     await page.fill("input[name='email']", process.env.H2P_EMAIL);
     await page.fill("input[name='password']", process.env.H2P_PASSWORD);
 
@@ -42,14 +67,10 @@ async function main() {
     await page.waitForURL(/panel\/bot/i, { timeout: 30000 });
     console.log("[H2P] Login success");
 
-    await closeGoogleVignette(page);
-
     // 打开 Renew 页面
     const renewUrl = "https://host2play.gratis/server/renew?i=93697c53-c1e3-475a-89f2-ec3bf012d18d";
     console.log("[H2P] Opening renew page...");
     await page.goto(renewUrl, { timeout: 60000 });
-
-    await closeGoogleVignette(page);
 
     // 等待跳转到 cp.host2play.gratis
     await page.waitForURL(/cp\.host2play\.gratis/i, { timeout: 20000 });
