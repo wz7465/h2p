@@ -1,5 +1,5 @@
-import { chromium } from "playwright";
-import fs from "fs";
+const { chromium } = require("playwright");
+const fs = require("fs");
 
 async function closeGoogleVignette(page) {
   try {
